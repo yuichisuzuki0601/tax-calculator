@@ -1,0 +1,304 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>ふるさと納税上限額試算</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width" />
+<link rel="stylesheet"
+	href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css" />
+<style>
+html, body {
+	color: #444;
+	height: 100%;
+}
+
+.area-input {
+	height: 35vh;
+	overflow: auto;
+	padding: 2vh 5vw;
+}
+
+.input-line {
+	padding: 0.5vh;
+}
+
+.explain {
+	color: #888;
+	font-size: 0.7rem;
+}
+
+.area-result {
+	height: calc(100vh - 35vh - 130px);
+	overflow: auto;
+	padding: 2vh;
+}
+
+table, thead, tbody, tr, th, td {
+	border: solid 1px #ccc;
+}
+
+table {
+	width: 100%;
+}
+
+th, td {
+	text-align: center;
+}
+</style>
+</head>
+<body>
+	<nav class="navbar navbar-expand-lg navbar-light bg-light">
+		<a class="navbar-brand" href="#">ふるさと納税上限額試算</a>
+	</nav>
+	<div class="container">
+		<div class="area-input">
+			<div class="row input-line">
+				<div class="col-lg-6">
+					<label for="input-income">所得</label> <span class="explain">(収入から給与所得控除や経費や青色申告特別控除を引いた後の金額)</span>
+				</div>
+				<div class="col-lg-6">
+					<div class="input-group">
+						<input id="input-income" class="form-control" type="number"
+							min="0" /> <span class="input-group-addon">円</span>
+					</div>
+				</div>
+			</div>
+			<div class="row input-line">
+				<div class="col-lg-6">
+					<label for="b">社会保険料合計</label>
+				</div>
+				<div class="col-lg-6">
+					<div class="input-group">
+						<input id="input-social-insurance" class="form-control"
+							type="number" min="0" /> <span class="input-group-addon">円</span>
+					</div>
+				</div>
+			</div>
+			<div class="row input-line">
+				<div class="col-lg-6">
+					<label for="input-life-insurance">生命保険料合計</label>
+				</div>
+				<div class="col-lg-6">
+					<div class="input-group">
+						<input id="input-life-insurance" class="form-control"
+							type="number" min="0" /> <span class="input-group-addon">円</span>
+					</div>
+				</div>
+			</div>
+			<div class="row input-line">
+				<div class="col-lg-6">
+					<label for="input-earthquake-insurance">地震保険料合計</label>
+				</div>
+				<div class="col-lg-6">
+					<div class="input-group">
+						<input id="input-earthquake-insurance" class="form-control"
+							type="number" min="0" /> <span class="input-group-addon">円</span>
+					</div>
+				</div>
+			</div>
+			<div class="row input-line">
+				<div class="col-lg-6">
+					<label for="input-housing-loan">住宅ローン控除残高</label> <span
+						class="explain">(ローン残の1% or 40万円のどちらか低い方)</span>
+				</div>
+				<div class="col-lg-6">
+					<div class="input-group">
+						<input id="input-housing-loan" class="form-control" type="number"
+							min="0" /> <span class="input-group-addon">円</span>
+					</div>
+				</div>
+			</div>
+			<div class="row input-line">
+				<div class="col-lg-12">
+					<button id="btn-go" class="form-control btn btn-primary">GO</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<hr />
+	<div class="area-result">
+		<table>
+			<thead>
+				<tr>
+					<th>ふるさと納税額</th>
+					<th>課税対象額</th>
+					<th>所得税</th>
+					<th>所得税から引ききれなかった税額控除</th>
+					<th>住民税所得割額(ふるさと納税控除反映前)</th>
+					<th>所得税からの控除</th>
+					<th>住民税からの基本控除</th>
+					<th>住民税からの特例控除</th>
+					<th>控除額合計</th>
+					<th>住民税所得割額(ふるさと納税控除反映後)</th>
+					<th>自己負担</th>
+				</tr>
+			</thead>
+			<tbody>
+				<script id="tmpl-record" type="text/template">
+					<tr>
+						<td>{{furusatoTax}}</td>
+						<td>{{kojoFromSyotoku}}</td>
+						<td>{{kojoFromJyuminKihon}}</td>
+						<td>{{kojoFromJyuminTokurei}}</td>
+						<td>{{kojoTotal}}</td>
+						<td>{{cost}}</td>
+					</tr>
+				</script>
+			</tbody>
+		</table>
+	</div>
+
+</body>
+<script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+<script
+	src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/js/bootstrap.bundle.min.js"></script>
+<script
+	src="https://cdnjs.cloudflare.com/ajax/libs/hogan.js/3.0.2/hogan.js"></script>
+<script>
+	var TAX_RATE = [ {
+		from : 0,
+		to : 195000,
+		percentage : 5,
+		adjuster : 0
+	}, {
+		from : 1950000,
+		to : 3300000,
+		percentage : 10,
+		adjuster : 97500
+	}, {
+		from : 3300000,
+		to : 6950000,
+		percentage : 20,
+		adjuster : 427500
+	}, {
+		from : 6950000,
+		to : 9000000,
+		percentage : 23,
+		adjuster : 636000
+	}, {
+		from : 9000000,
+		to : 1800000,
+		percentage : 33,
+		adjuster : 1536000
+	}, {
+		from : 18000000,
+		to : 40000000,
+		percentage : 40,
+		adjuster : 2796000
+	}, {
+		from : 40000000,
+		to : 99999999,
+		percentage : 45,
+		adjuster : 4796000
+	} ];
+
+	var TMPL = Hogan.compile($('#tmpl-record').text());
+
+	$('#btn-go').on('click', function() {
+		var income = $('#input-income').val();
+		var socialInsurance = $('#input-social-insurance').val();
+		var lifeInsurance = $('#input-life-insurance').val();
+		var earthquakeInsurance = $('#input-earthquake-insurance').val();
+		var housingLoan = $('#input-housing-loan').val();
+
+		for (var furusatoTax = 3000; furusatoTax < 10000000; furusatoTax += 1000) {
+			var result = {};
+
+			result.furusatoTax = furusatoTax;
+
+			result.kazeiTaisyou = kazeiTaisyou(income, furusatoTax, socialInsurance, lifeInsurance, earthquakeInsurance);
+			result.syotokuZei = syotokuZei(result.kazeiTaisyou, housingLoan);
+			result.overRoanKojo = overRoanKojo(result.kazeiTaisyou, housingLoan);
+			result.jyuminBefore = jyuminzeiSyotokuwarigaku(result.kazeiTaisyou, overRoanKojo);
+
+			result.A = kojoFromSyotokuZei(furusatoTax, income);
+			result.B = kojoFromJyuminKihon(furusatoTax, income);
+			result.C = kojoFromJyuminTokurei(furusatoTax, income, result.jyuminBefore);
+
+			result.kojoTotal = result.A + result.B + result.C;
+			result.jyuminAfter = result.jyuminBefore - result.B - result.C;
+			result.cost = result.kojoTotal - furusatoTax;
+
+			$('tbody').append(TMPL.render(result));
+
+			if (result.cost < -2000) {
+				break;
+			}
+		}
+	});
+
+	var kazeiTaisyou = function(syotoku, furusatoTax, syahoTotal, seihoTotal, jishinTotal) {
+		// 納税額は所得の40%が上限
+		if (syotoku * 0.4 <= furusatoTax) {
+			furusatoTax = syotoku * 0.4;
+		}
+		// 所得税に対する基礎控除38万円
+		var tmp = syotoku - 380000 - (furusatoTax - 2000) - syahoTotal - seihoTotal - jishinTotal;
+		// 千円未満の切り落とし
+		tmp /= 1000;
+		tmp *= 1000;
+		return tmp;
+	}
+
+	var syotokuZeiCore = function(kazeiTaisyou, roanKojo) {
+		var sz = getSyotokuZeiritu(kazeiTaisyou);
+		var tmp = ((kazeiTaisyou * sz.percentage / 100) - sz.adjuster - roanKojo) * 1.021;// 復興特別所得税額を加算(2.1%)
+		// 百円未満の切り落とし
+		tmp /= 100;
+		tmp *= 100;
+		return tmp;
+	}
+
+	var syotokuZei = function(kazeiTaisyou, roanKojo) {
+		var tmp = syotokuZeiCore(kazeiTaisyou, roanKojo);
+		return tmp > 0 ? tmp : 0;
+	}
+
+	var overRoanKojo = function(kazeiTaisyou, roanKojo) {
+		var tmp = syotokuZeiCore(kazeiTaisyou, roanKojo);
+		return 0 > tmp ? -1 * tmp : 0;
+	}
+
+	var jyuminzeiSyotokuwarigaku = function(kazeiTaisyou, overRoanKojo) {
+		kazeiTaisyou += 50000;// 住民税の課税対象は基礎控除33万円なので所得税計算における基礎控除38万円との差を埋めるため5万円プラス
+		var tmp = (kazeiTaisyou * 0.1) - overRoanKojo;
+		return tmp > 0 ? tmp : 0;
+	}
+
+	var kojoFromSyotokuZei = function(furusatoTax, syotoku) {
+		// 納税額は所得の40%が上限
+		if (syotoku * 0.4 <= furusatoTax) {
+			furusatoTax = syotoku * 0.4;
+		}
+		return (furusatoTax - 2000) * getSyotokuZeiritu(syotoku).percentage / 100;
+	}
+
+	var kojoFromJyuminKihon = function(furusatoTax, syotoku) {
+		// 納税額は所得の30%が上限
+		if (syotoku * 0.3 <= furusatoTax) {
+			furusatoTax = syotoku * 0.3;
+		}
+		return (furusatoTax - 2000) * 0.1;
+	}
+
+	var kojoFromJyuminTokurei = function(furusatoTax, syotoku, jyuminzeiSyotokuWarigaku) {
+		var result = (furusatoTax - 2000) * ((90 - getSyotokuZeiritu(syotoku).percentage) / 100);
+		// 住民税特例控除は住民税所得割額の20%が上限
+		if (result >= jyuminzeiSyotokuWarigaku * 0.2) {
+			return jyuminzeiSyotokuWarigaku * 0.2;
+		} else {
+			return result;
+		}
+	}
+
+	var getSyotokuZeiritu = function(syotoku) {
+		return TAX_RATE.filter(tr => tr.from <= syotoku && syotoku < tr.to)[0];
+	}
+
+	var format = function(value) {
+		return value.toLocaleString();
+	}
+
+</script>
+</html>

@@ -105,7 +105,7 @@ th, td {
 				<div class="col-lg-6">
 					<div class="input-group">
 						<input id="input-housing-loan" class="form-control" type="number"
-							min="0" /> <span class="input-group-addon">円</span>
+							min="0" max="400000" /> <span class="input-group-addon">円</span>
 					</div>
 				</div>
 			</div>
@@ -122,15 +122,16 @@ th, td {
 			<thead>
 				<tr>
 					<th>ふるさと納税額</th>
-					<th>課税対象額</th>
+					<th>所得税課税対象額</th>
 					<th>所得税</th>
 					<th>所得税から引ききれなかった税額控除</th>
-					<th>住民税所得割額(ふるさと納税控除反映前)</th>
-					<th>所得税からの控除</th>
-					<th>住民税からの基本控除</th>
-					<th>住民税からの特例控除</th>
-					<th>控除額合計</th>
-					<th>住民税所得割額(ふるさと納税控除反映後)</th>
+					<th>住民税課税対象額</th>
+					<th>住民税所得割額(寄付金控除前)</th>
+					<th>所得税からの寄付金控除</th>
+					<th>住民税基本部分からの寄付金控除</th>
+					<th>住民税特例部分からの寄付金控除</th>
+					<th>住民税所得割額(寄付金控除後)</th>
+					<th>寄付金控除額合計</th>
 					<th>自己負担</th>
 				</tr>
 			</thead>
@@ -138,9 +139,15 @@ th, td {
 				<script id="tmpl-record" type="text/template">
 					<tr>
 						<td>{{furusatoTax}}</td>
-						<td>{{kojoFromSyotoku}}</td>
-						<td>{{kojoFromJyuminKihon}}</td>
-						<td>{{kojoFromJyuminTokurei}}</td>
+						<td>{{taxableAmountForIncomeTax}}</td>
+						<td>{{incomeTax}}</td>
+						<td>{{overTaxDeduction}}</td>
+						<td>{{taxableAmountForResidentTax}}</td>
+						<td>{{jyuminBefore}}</td>
+						<td>{{A}}</td>
+						<td>{{B}}</td>
+						<td>{{C}}</td>
+						<td>{{jyuminAfter}}</td>
 						<td>{{kojoTotal}}</td>
 						<td>{{cost}}</td>
 					</tr>
@@ -156,9 +163,20 @@ th, td {
 <script
 	src="https://cdnjs.cloudflare.com/ajax/libs/hogan.js/3.0.2/hogan.js"></script>
 <script>
-	var TAX_RATE = [ {
+	// 所得税基礎控除額
+	var BASIC_DEDUCTION_FOR_INCOME_TAX = 380000;
+
+	// 住民税基礎控除額
+	var BASIC_DEDUCTION_FOR_RESIDENT_TAX = 330000;
+
+	var TAX_RATES = [ {
+		from : -99999999,
+		to : 0,
+		percentage : 0,
+		adjuster : 0
+	},{
 		from : 0,
-		to : 195000,
+		to : 1950000,
 		percentage : 5,
 		adjuster : 0
 	}, {
@@ -196,31 +214,43 @@ th, td {
 	var TMPL = Hogan.compile($('#tmpl-record').text());
 
 	$('#btn-go').on('click', function() {
-		var income = $('#input-income').val();
-		var socialInsurance = $('#input-social-insurance').val();
-		var lifeInsurance = $('#input-life-insurance').val();
-		var earthquakeInsurance = $('#input-earthquake-insurance').val();
-		var housingLoan = $('#input-housing-loan').val();
+		var income = $('#input-income').val() || 0;
+		var socialInsurance = $('#input-social-insurance').val() || 0;
+		var lifeInsurance = $('#input-life-insurance').val() || 0;
+		var earthquakeInsurance = $('#input-earthquake-insurance').val() || 0;
+		var housingLoan = $('#input-housing-loan').val() || 0;
 
-		for (var furusatoTax = 3000; furusatoTax < 10000000; furusatoTax += 1000) {
+		$('tbody').empty();
+
+		for (var furusatoTax = 2000; furusatoTax < 10000000; furusatoTax += 1000) {
 			var result = {};
 
 			result.furusatoTax = furusatoTax;
+			result.taxableAmountForIncomeTax = getTaxableAmountForIncomeTax(income, furusatoTax, socialInsurance, lifeInsurance, earthquakeInsurance);
 
-			result.kazeiTaisyou = kazeiTaisyou(income, furusatoTax, socialInsurance, lifeInsurance, earthquakeInsurance);
-			result.syotokuZei = syotokuZei(result.kazeiTaisyou, housingLoan);
-			result.overRoanKojo = overRoanKojo(result.kazeiTaisyou, housingLoan);
-			result.jyuminBefore = jyuminzeiSyotokuwarigaku(result.kazeiTaisyou, overRoanKojo);
+			var incomeTax = getIncomeTax(result.taxableAmountForIncomeTax, housingLoan);
+			if (incomeTax > 0) {
+				result.incomeTax = incomeTax;
+				result.overTaxDeduction = 0;
+			} else {
+				result.incomeTax = 0;
+				result.overTaxDeduction = -1 * incomeTax;
+			}
 
-			result.A = kojoFromSyotokuZei(furusatoTax, income);
-			result.B = kojoFromJyuminKihon(furusatoTax, income);
-			result.C = kojoFromJyuminTokurei(furusatoTax, income, result.jyuminBefore);
+			result.taxableAmountForResidentTax = getTaxableAmountForResidentTax(income, socialInsurance, lifeInsurance, earthquakeInsurance);
+			result.jyuminBefore = jyuminzeiSyotokuwarigaku(result.taxableAmountForResidentTax, result.overTaxDeduction);
 
+			result.A = kojoFromSyotokuZei(income, furusatoTax);
+			result.B = kojoFromJyuminKihon(income, furusatoTax);
+			result.C = kojoFromJyuminTokurei(income, furusatoTax, result.jyuminBefore);
+
+			result.jyuminAfter = result.jyuminBefore - result.B -result.C;
 			result.kojoTotal = result.A + result.B + result.C;
-			result.jyuminAfter = result.jyuminBefore - result.B - result.C;
 			result.cost = result.kojoTotal - furusatoTax;
 
-			$('tbody').append(TMPL.render(result));
+			var vm = {};
+			Object.keys(result).forEach(k => vm[k] = result[k].toLocaleString());
+			$('tbody').append(TMPL.render(vm));
 
 			if (result.cost < -2000) {
 				break;
@@ -228,62 +258,74 @@ th, td {
 		}
 	});
 
-	var kazeiTaisyou = function(syotoku, furusatoTax, syahoTotal, seihoTotal, jishinTotal) {
-		// 納税額は所得の40%が上限
-		if (syotoku * 0.4 <= furusatoTax) {
-			furusatoTax = syotoku * 0.4;
+	var floor1000 = function(value) {
+		value /= 1000;
+		value = Math.floor(value);
+		value *= 1000;
+		return value;
+	}
+
+	// 所得税課税対象額を返します
+	var getTaxableAmountForIncomeTax = function(income, furusatoTax, socialInsurance, lifeInsurance, earthquakeInsurance) {
+		// ふるさと納税額は所得の40%が上限
+		if (income * 0.4 <= furusatoTax) {
+			furusatoTax = income * 0.4;
 		}
-		// 所得税に対する基礎控除38万円
-		var tmp = syotoku - 380000 - (furusatoTax - 2000) - syahoTotal - seihoTotal - jishinTotal;
+		var result = income - BASIC_DEDUCTION_FOR_INCOME_TAX - (furusatoTax - 2000) - socialInsurance - lifeInsurance - earthquakeInsurance;
 		// 千円未満の切り落とし
-		tmp /= 1000;
-		tmp *= 1000;
-		return tmp;
+		return floor1000(result);
 	}
 
-	var syotokuZeiCore = function(kazeiTaisyou, roanKojo) {
-		var sz = getSyotokuZeiritu(kazeiTaisyou);
-		var tmp = ((kazeiTaisyou * sz.percentage / 100) - sz.adjuster - roanKojo) * 1.021;// 復興特別所得税額を加算(2.1%)
+	// 住民税課税対象額を返します
+	var getTaxableAmountForResidentTax = function(income, socialInsurance, lifeInsurance, earthquakeInsurance) {
+		var result = income - BASIC_DEDUCTION_FOR_RESIDENT_TAX - socialInsurance - lifeInsurance - earthquakeInsurance;
+		// 千円未満の切り落とし
+		return floor1000(result);
+	}
+
+	// 課税対象額から税率を返します
+	var getTaxRate = function(taxableAmount) {
+		return TAX_RATES.filter(tr => tr.from <= taxableAmount && taxableAmount < tr.to)[0];
+	}
+
+	// 所得税を返します(税額控除額によってはマイナスになります)
+	var getIncomeTax = function(taxableAmount, housingLoan) {
+		var taxRate = getTaxRate(taxableAmount);
+		var result = ((taxableAmount * taxRate.percentage / 100) - taxRate.adjuster - housingLoan) * 1.021;// 復興特別所得税額を加算(2.1%)
 		// 百円未満の切り落とし
-		tmp /= 100;
-		tmp *= 100;
-		return tmp;
+		result /= 100;
+		result = Math.floor(result);
+		result *= 100;
+		return result;
 	}
 
-	var syotokuZei = function(kazeiTaisyou, roanKojo) {
-		var tmp = syotokuZeiCore(kazeiTaisyou, roanKojo);
-		return tmp > 0 ? tmp : 0;
+	// 住民税の所得割額を返します
+	var jyuminzeiSyotokuwarigaku = function(taxableAmountForResidentTax, overTaxDeduction) {
+		var result = (taxableAmountForResidentTax * 0.1) - overTaxDeduction;
+		return result > 0 ? result : 0;
 	}
 
-	var overRoanKojo = function(kazeiTaisyou, roanKojo) {
-		var tmp = syotokuZeiCore(kazeiTaisyou, roanKojo);
-		return 0 > tmp ? -1 * tmp : 0;
-	}
-
-	var jyuminzeiSyotokuwarigaku = function(kazeiTaisyou, overRoanKojo) {
-		kazeiTaisyou += 50000;// 住民税の課税対象は基礎控除33万円なので所得税計算における基礎控除38万円との差を埋めるため5万円プラス
-		var tmp = (kazeiTaisyou * 0.1) - overRoanKojo;
-		return tmp > 0 ? tmp : 0;
-	}
-
-	var kojoFromSyotokuZei = function(furusatoTax, syotoku) {
-		// 納税額は所得の40%が上限
-		if (syotoku * 0.4 <= furusatoTax) {
-			furusatoTax = syotoku * 0.4;
+	var kojoFromSyotokuZei = function(income, furusatoTax) {
+		// ふるさと納税額は所得の40%が上限
+		if (income * 0.4 <= furusatoTax) {
+			furusatoTax = income * 0.4;
 		}
-		return (furusatoTax - 2000) * getSyotokuZeiritu(syotoku).percentage / 100;
+		return (furusatoTax - 2000) * getTaxRate(income).percentage / 100;
 	}
 
-	var kojoFromJyuminKihon = function(furusatoTax, syotoku) {
-		// 納税額は所得の30%が上限
-		if (syotoku * 0.3 <= furusatoTax) {
-			furusatoTax = syotoku * 0.3;
+	//
+	var kojoFromJyuminKihon = function(income, furusatoTax) {
+		// ふるさと納税額は所得の30%が上限
+		if (income * 0.3 <= furusatoTax) {
+			furusatoTax = income * 0.3;
 		}
 		return (furusatoTax - 2000) * 0.1;
 	}
 
-	var kojoFromJyuminTokurei = function(furusatoTax, syotoku, jyuminzeiSyotokuWarigaku) {
-		var result = (furusatoTax - 2000) * ((90 - getSyotokuZeiritu(syotoku).percentage) / 100);
+	var kojoFromJyuminTokurei = function(income, furusatoTax, jyuminzeiSyotokuWarigaku) {
+		var result = (furusatoTax - 2000) * ((90 - getTaxRate(income).percentage) / 100);
+		// 小数点の誤差がたまに出るので対応
+		result = Math.ceil(result);
 		// 住民税特例控除は住民税所得割額の20%が上限
 		if (result >= jyuminzeiSyotokuWarigaku * 0.2) {
 			return jyuminzeiSyotokuWarigaku * 0.2;
@@ -291,14 +333,5 @@ th, td {
 			return result;
 		}
 	}
-
-	var getSyotokuZeiritu = function(syotoku) {
-		return TAX_RATE.filter(tr => tr.from <= syotoku && syotoku < tr.to)[0];
-	}
-
-	var format = function(value) {
-		return value.toLocaleString();
-	}
-
 </script>
 </html>
